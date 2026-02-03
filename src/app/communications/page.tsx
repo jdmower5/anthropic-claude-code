@@ -1,7 +1,18 @@
 "use client";
 
-import { useState } from "react";
-import { messages, customers, type Message } from "@/lib/data";
+import { useState, useEffect } from "react";
+import { messages as sampleMessages, customers as sampleCustomers, type Message } from "@/lib/data";
+
+interface JobberClient {
+  id: string;
+  firstName: string;
+  lastName: string;
+  companyName: string | null;
+  emails: { address: string; primary: boolean }[];
+  phones: { number: string; primary: boolean }[];
+  balance: number;
+  createdAt: string;
+}
 
 const channelBadge: Record<string, string> = {
   email: "bg-blue-100 text-blue-700",
@@ -14,22 +25,76 @@ export default function CommunicationsPage() {
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
   const [filter, setFilter] = useState<"all" | "unread">("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [jobberConnected, setJobberConnected] = useState(false);
+  const [jobberClients, setJobberClients] = useState<JobberClient[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const filteredMessages = messages.filter((m) => {
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const statusRes = await fetch("/api/jobber/status");
+        const status = await statusRes.json();
+        if (status.connected) {
+          setJobberConnected(true);
+          const clientsRes = await fetch("/api/jobber/clients");
+          if (clientsRes.ok) {
+            const data = await clientsRes.json();
+            setJobberClients(data.nodes || []);
+          }
+        }
+      } catch {
+        setJobberConnected(false);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadData();
+  }, []);
+
+  const filteredMessages = sampleMessages.filter((m) => {
     if (filter === "unread" && m.read) return false;
     if (searchQuery && !m.customerName.toLowerCase().includes(searchQuery.toLowerCase()) && !m.subject.toLowerCase().includes(searchQuery.toLowerCase())) return false;
     return true;
   });
 
   const selectedCustomer = selectedMessage
-    ? customers.find((c) => c.id === selectedMessage.customerId)
+    ? sampleCustomers.find((c) => c.id === selectedMessage.customerId)
     : null;
+
+  const filteredJobberClients = jobberClients.filter((c) => {
+    const name = `${c.firstName} ${c.lastName}`.toLowerCase();
+    const email = c.emails?.[0]?.address?.toLowerCase() || "";
+    return name.includes(searchQuery.toLowerCase()) || email.includes(searchQuery.toLowerCase());
+  });
 
   return (
     <div>
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900">Communications</h1>
-        <p className="text-gray-500 mt-1">Manage all customer messages and conversations.</p>
+        <p className="text-gray-500 mt-1">
+          Manage all customer messages and conversations.
+          {jobberConnected && (
+            <span className="inline-flex items-center ml-2 text-green-600 text-xs font-medium">
+              <span className="w-2 h-2 bg-green-500 rounded-full mr-1" />
+              Jobber Connected
+            </span>
+          )}
+        </p>
+      </div>
+
+      {/* Gmail Integration Notice */}
+      <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+        <div className="flex items-start gap-3">
+          <svg className="w-5 h-5 text-blue-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <div>
+            <p className="text-sm font-medium text-blue-900">Gmail Integration Coming Soon</p>
+            <p className="text-sm text-blue-700 mt-1">
+              Connect your Gmail to see real customer emails here. For now, showing sample messages.
+            </p>
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -50,7 +115,7 @@ export default function CommunicationsPage() {
                   filter === "all" ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                 }`}
               >
-                All ({messages.length})
+                All ({sampleMessages.length})
               </button>
               <button
                 onClick={() => setFilter("unread")}
@@ -58,7 +123,7 @@ export default function CommunicationsPage() {
                   filter === "unread" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                 }`}
               >
-                Unread ({messages.filter((m) => !m.read).length})
+                Unread ({sampleMessages.filter((m) => !m.read).length})
               </button>
             </div>
           </div>
@@ -137,11 +202,9 @@ export default function CommunicationsPage() {
                       <span className="text-gray-500">Status</span>
                       <p>
                         <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
-                          selectedCustomer.status === "active"
-                            ? "bg-green-100 text-green-700"
-                            : selectedCustomer.status === "pending"
-                            ? "bg-yellow-100 text-yellow-700"
-                            : "bg-gray-100 text-gray-700"
+                          selectedCustomer.status === "active" ? "bg-green-100 text-green-700"
+                          : selectedCustomer.status === "pending" ? "bg-yellow-100 text-yellow-700"
+                          : "bg-gray-100 text-gray-700"
                         }`}>
                           {selectedCustomer.status}
                         </span>
@@ -154,10 +217,6 @@ export default function CommunicationsPage() {
                     <div>
                       <span className="text-gray-500">Phone</span>
                       <p className="font-medium">{selectedCustomer.phone}</p>
-                    </div>
-                    <div>
-                      <span className="text-gray-500">Last Contact</span>
-                      <p className="font-medium">{selectedCustomer.lastContact}</p>
                     </div>
                   </div>
                 </div>
@@ -195,43 +254,85 @@ export default function CommunicationsPage() {
         </div>
       </div>
 
-      {/* Customer Directory */}
+      {/* Client Directory */}
       <div className="mt-8 bg-white rounded-xl border border-gray-200 p-6">
-        <h2 className="text-lg font-semibold mb-4">Customer Directory</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-200">
-                <th className="text-left py-3 px-4 font-medium text-gray-500">Name</th>
-                <th className="text-left py-3 px-4 font-medium text-gray-500">Email</th>
-                <th className="text-left py-3 px-4 font-medium text-gray-500">Phone</th>
-                <th className="text-left py-3 px-4 font-medium text-gray-500">Last Contact</th>
-                <th className="text-left py-3 px-4 font-medium text-gray-500">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {customers.map((c) => (
-                <tr key={c.id} className="border-b border-gray-100 hover:bg-gray-50">
-                  <td className="py-3 px-4 font-medium">{c.name}</td>
-                  <td className="py-3 px-4 text-gray-600">{c.email}</td>
-                  <td className="py-3 px-4 text-gray-600">{c.phone}</td>
-                  <td className="py-3 px-4 text-gray-600">{c.lastContact}</td>
-                  <td className="py-3 px-4">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                      c.status === "active"
-                        ? "bg-green-100 text-green-700"
-                        : c.status === "pending"
-                        ? "bg-yellow-100 text-yellow-700"
-                        : "bg-gray-100 text-gray-700"
-                    }`}>
-                      {c.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold">
+            {jobberConnected ? "Jobber Clients" : "Customer Directory"}
+          </h2>
+          {loading && (
+            <div className="w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+          )}
         </div>
+
+        {jobberConnected ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-200">
+                  <th className="text-left py-3 px-4 font-medium text-gray-500">Name</th>
+                  <th className="text-left py-3 px-4 font-medium text-gray-500">Company</th>
+                  <th className="text-left py-3 px-4 font-medium text-gray-500">Email</th>
+                  <th className="text-left py-3 px-4 font-medium text-gray-500">Phone</th>
+                  <th className="text-right py-3 px-4 font-medium text-gray-500">Balance</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredJobberClients.map((c) => {
+                  const email = c.emails?.find((e) => e.primary)?.address || c.emails?.[0]?.address || "—";
+                  const phone = c.phones?.find((p) => p.primary)?.number || c.phones?.[0]?.number || "—";
+                  return (
+                    <tr key={c.id} className="border-b border-gray-100 hover:bg-gray-50">
+                      <td className="py-3 px-4 font-medium">{c.firstName} {c.lastName}</td>
+                      <td className="py-3 px-4 text-gray-600">{c.companyName || "—"}</td>
+                      <td className="py-3 px-4 text-gray-600">{email}</td>
+                      <td className="py-3 px-4 text-gray-600">{phone}</td>
+                      <td className={`py-3 px-4 text-right font-medium ${c.balance > 0 ? "text-red-600" : "text-green-600"}`}>
+                        {c.balance > 0 ? `$${c.balance.toFixed(2)}` : "$0.00"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {filteredJobberClients.length === 0 && (
+              <p className="text-center py-8 text-gray-400">No clients found.</p>
+            )}
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-200">
+                  <th className="text-left py-3 px-4 font-medium text-gray-500">Name</th>
+                  <th className="text-left py-3 px-4 font-medium text-gray-500">Email</th>
+                  <th className="text-left py-3 px-4 font-medium text-gray-500">Phone</th>
+                  <th className="text-left py-3 px-4 font-medium text-gray-500">Last Contact</th>
+                  <th className="text-left py-3 px-4 font-medium text-gray-500">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sampleCustomers.map((c) => (
+                  <tr key={c.id} className="border-b border-gray-100 hover:bg-gray-50">
+                    <td className="py-3 px-4 font-medium">{c.name}</td>
+                    <td className="py-3 px-4 text-gray-600">{c.email}</td>
+                    <td className="py-3 px-4 text-gray-600">{c.phone}</td>
+                    <td className="py-3 px-4 text-gray-600">{c.lastContact}</td>
+                    <td className="py-3 px-4">
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                        c.status === "active" ? "bg-green-100 text-green-700"
+                        : c.status === "pending" ? "bg-yellow-100 text-yellow-700"
+                        : "bg-gray-100 text-gray-700"
+                      }`}>
+                        {c.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
